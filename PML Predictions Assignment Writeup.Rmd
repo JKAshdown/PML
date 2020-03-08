@@ -1,0 +1,161 @@
+---
+title: 'PML: Prediction Assignment Writeup'
+author: "James Ashdown"
+date: "8 March 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read in the data
+
+```{r pml1}
+traindat = read.csv("pml-training.csv")
+testdat = read.csv("pml-testing.csv")
+```
+
+## Set the seed and view the data
+
+```{r pml2}
+set.seed(3000)
+library(caret)
+library(randomForest)
+library(e1071)
+library(gbm)
+library(rpart)
+dim(traindat)
+dim(testdat)
+head(traindat)
+head(testdat)
+```
+
+The first seven columns are not useful for prediction and need to be removed.
+
+## Remove the first seven columns and check the dimensions
+
+```{r pml3}
+traindat<-traindat[,-c(1:7)]
+dim(traindat)
+testdat<-testdat[,-c(1:7)]
+dim(testdat)
+```
+
+The number of columns has reduced from 160 to 153.
+
+## Partition Data
+
+```{r pml4}
+inTrain<-createDataPartition(traindat$classe,p=3/4)[[1]]
+training<-traindat[inTrain,]
+testing<-traindat[-inTrain,]
+validation<-testdat
+dim(training)
+```
+
+We will train on 75% of the training dataset and test on the other 25%, before applying predictions on the validation dataset.
+
+## Build models
+
+```{r pml5}
+control <- trainControl(method="cv", number=3)
+#fitRf <- train(classe ~ ., data=training,trControl=control, method="rf",verbose=FALSE) # no need to run this
+
+```
+
+When we try to train the Random Forest a missing values error is generated.
+
+## View missing
+
+```{r pml6}
+library(Rcpp)
+library(DataExplorer)
+plot_missing(training)
+
+```
+
+Lots of the columns are 98% NA, these need to be removed before fitting the models.
+
+## View missing
+
+Set the missings to NA and remove the columns with NAs. View the missings again.
+
+```{r pml7}
+training[training==""]<-NA # set missings to NA
+trainingClean<-training[,colSums(is.na(training))==0] # remove columns with NAs
+dim(trainingClean)
+plot_missing(trainingClean)
+
+```
+
+All of the variables are now showing as good.
+
+## Try modelling again
+
+Set 3 fold cross-validation in the control. We are going to test 4 models: Random Forest, GBM, Classification Tree and LDA.
+
+```{r pml8}
+control <- trainControl(method="cv", number=3)
+fitRf <- train(classe ~ ., data=trainingClean,trControl=control, method="rf",verbose=FALSE)
+fitCT<-train(classe~.,data=trainingClean,method="rpart",trControl=control)
+fitGbm <- train(classe ~ ., data=trainingClean,trControl=control, method="gbm",verbose=FALSE)
+fitLda <- train(classe ~ ., data=trainingClean,trControl=control, method="lda")
+```
+
+The models have now been created without error.
+
+## Apply the predictions on the training dataset and get accuracy figures. 
+
+```{r pml9}
+predRftrain<-predict(fitRf,trainingClean)
+print(paste0("RF accuracy=",confusionMatrix(predRftrain,trainingClean$classe)$overall['Accuracy']))
+confusionMatrix(predRftrain,trainingClean$classe)$table
+predCTtrain<-predict(fitCT,trainingClean)
+print(paste0("CT accuracy=",confusionMatrix(predCTtrain,trainingClean$classe)$overall['Accuracy']))
+confusionMatrix(predCTtrain,trainingClean$classe)$table
+predGbmtrain<-predict(fitGbm,trainingClean)
+print(paste0("GBM accuracy=",confusionMatrix(predGbmtrain,trainingClean$classe)$overall['Accuracy']))
+confusionMatrix(predGbmtrain,trainingClean$classe)$table
+predLdatrain<-predict(fitLda,trainingClean)
+print(paste0("LDA accuracy=",confusionMatrix(predLdatrain,trainingClean$classe)$overall['Accuracy']))
+confusionMatrix(predLdatrain,trainingClean$classe)$table
+```
+
+## We need to clean the test and validation datasets prior to applying the models.
+
+```{r pml10}
+testing[testing==""]<-NA
+testingClean<-testing[,colSums(is.na(testing))==0]
+dim(testingClean)
+validation[validation==""]<-NA
+validationClean<-validation[,colSums(is.na(validation))==0]
+dim(validationClean)
+```
+
+## Predictions for the cleaned test dataset:
+
+```{r pml11}
+predRftest<-predict(fitRf,testingClean)
+print(paste0("RF accuracy=",confusionMatrix(predRftest,testingClean$classe)$overall['Accuracy']))
+confusionMatrix(predRftest,testingClean$classe)$table
+predCTtest<-predict(fitCT,testingClean)
+print(paste0("CT accuracy=",confusionMatrix(predCTtest,testingClean$classe)$overall['Accuracy']))
+confusionMatrix(predCTtest,testingClean$classe)$table
+predGbmtest<-predict(fitGbm,testingClean)
+print(paste0("GBM accuracy=",confusionMatrix(predGbmtest,testingClean$classe)$overall['Accuracy']))
+confusionMatrix(predGbmtest,testingClean$classe)$table
+predLdatest<-predict(fitLda,testingClean)
+print(paste0("LDA accuracy=",confusionMatrix(predLdatest,testingClean$classe)$overall['Accuracy']))
+confusionMatrix(predLdatest,testingClean$classe)$table
+```
+
+The Random Forest model has the highest accuracy at 99%. The accuracy is sufficiently high that model stacking is unlikely to add much benefit.
+
+## Generate the final predictions for the validation data:
+
+```{r pml12}
+predRfvalid<-predict(fitRf,validationClean)
+predRfvalid
+```
+
